@@ -15,54 +15,53 @@
 package conditions
 
 import (
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	apiv1 "github.com/operator-framework/api/pkg/operators/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+	v1 "github.com/operator-framework/api/pkg/operators/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-func TestSource(t *testing.T) {
+var k8sClient client.Client
+var testEnv *envtest.Environment
+
+func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t, "Conditions Suite", []Reporter{printer.NewlineReporter{}, printer.NewProwReporter("Conditions Suite")})
+
+	RunSpecsWithDefaultAndCustomReporters(t,
+		"Condition Suite",
+		[]Reporter{printer.NewlineReporter{}})
 }
 
-var testenv *envtest.Environment
-var cfg *rest.Config
-var clientset *kubernetes.Clientset
-var sch = runtime.NewScheme()
-var err error
-
-var _ = BeforeSuite(func(done Done) {
+var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	// Add operator apiv1 to scheme
-	err = apiv1.AddToScheme(sch)
-	Expect(err).NotTo(HaveOccurred())
-
-	testenv = &envtest.Environment{}
-	testenv.CRDInstallOptions = envtest.CRDInstallOptions{
-		Paths: []string{"olm/"},
+	By("bootstrapping test environment")
+	testEnv = &envtest.Environment{
+		CRDDirectoryPaths: []string{filepath.Join("olm")},
 	}
 
-	cfg, err = testenv.Start()
+	cfg, err := testEnv.Start()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(cfg).NotTo(BeNil())
+
+	err = v1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Remove this, testenv.Start installs CRD
-	obj, err := envtest.InstallCRDs(cfg, testenv.CRDInstallOptions)
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
-	Expect(obj).NotTo(BeNil())
-
-	close(done)
+	Expect(k8sClient).NotTo(BeNil())
 }, 60)
 
 var _ = AfterSuite(func() {
-	Expect(testenv.Stop()).To(Succeed())
+	By("tearing down the test environment")
+	err := testEnv.Stop()
+	Expect(err).NotTo(HaveOccurred())
 })
